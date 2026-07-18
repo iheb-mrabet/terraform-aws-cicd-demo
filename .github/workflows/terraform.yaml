@@ -6,6 +6,16 @@ on:
 
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Terraform operation to run
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
 
 permissions:
   contents: read
