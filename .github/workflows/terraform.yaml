@@ -6,6 +6,7 @@ on:
 
   push:
     branches: [main]
+
   workflow_dispatch:
     inputs:
       operation:
@@ -30,18 +31,31 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Block manual apply outside main
+        if: >
+          github.event_name == 'workflow_dispatch' &&
+          inputs.operation == 'apply' &&
+          github.ref != 'refs/heads/main'
+        run: |
+          echo "Manual apply is allowed only from the main branch."
+          exit 1
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6.1.0
         with:
-         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-         aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-         aws-region: us-east-1
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+          allowed-account-ids: "528087396500"
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.12.0
 
@@ -54,14 +68,14 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Terraform Plan for Pull Request
-        if: github.event_name == 'pull_request'
-        run: terraform plan -input=false -lock-timeout=5m
-
-      - name: Terraform Plan for Main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Terraform Plan
         run: terraform plan -input=false -lock-timeout=5m -out=plan.tfout
 
       - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: >
+          (github.event_name == 'push' &&
+          github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' &&
+          inputs.operation == 'apply' &&
+          github.ref == 'refs/heads/main')
         run: terraform apply -input=false -auto-approve plan.tfout
